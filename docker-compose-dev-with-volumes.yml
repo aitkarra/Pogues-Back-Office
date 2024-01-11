@@ -1,0 +1,64 @@
+x-maven-openjdk-volumes: &maven-openjdk-volumes
+  - ./.m2:/root/.m2
+  - ./:/tmp
+
+x-jre-volumes: &jre-volumes
+  - ./target:/tmp
+
+secrets:
+  postgres-password:
+    file: ./secrets/postgres_password.txt
+
+x-db-volumes: &db-volumes
+#  - ./postgres_data:/var/lib/postgresql/data:rw,z,U
+#  - postgres-vol:/var/lib/postgresql/data:rw,z,U
+  - postgres-vol:/var/lib/postgresql/data
+
+version: '3.7'
+
+services:
+  build:
+    container_name: maven-3-8-4-openjdk-17
+    image: docker.io/maven:3.8.4-openjdk-17
+    #    image: harbor.cluster.pve.perso.relativite.ovh/store/maven:3.8.4-openjdk-11
+    #    image: cache-ili.univ-artois.fr/proxy_cache/library/maven:3.8.4-openjdk-11
+    volumes: *maven-openjdk-volumes
+    tty: true
+    command: "/bin/bash"
+    working_dir: /tmp
+
+  run:
+    container_name: eclipse-temurin-17-jre-focal
+    image: docker.io/eclipse-temurin:17-jre-focal
+    ports:
+      - 8080:80
+    volumes: *jre-volumes
+    tty: true
+    command: "/bin/bash"
+    working_dir: /tmp
+
+  db:
+    image: postgres:16.1
+#    image: bitnami/postgresql:16.1.0-debian-11-r19
+    container_name: postgres-dev-with-volumes
+    hostname: postgres-dev
+    privileged: true
+    environment:
+      - POSTGRES_USER=dev
+      - POSTGRES_DB=db
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres-password
+    secrets:
+      - postgres-password
+    healthcheck:
+      test: ["CMD-SHELL", "sh -c 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}'"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    volumes: *db-volumes
+    expose:
+      - "5432"
+    ports:
+      - 5432:5432
+
+volumes:
+  postgres-vol:

@@ -15,3 +15,5 @@ WebContent/*.css
 WebContent/*.map
 WebContent/*.js
 /bin/
+#feature/conteneurisation
+.m2
