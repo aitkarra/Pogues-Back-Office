@@ -12,7 +12,8 @@ secrets:
 x-db-volumes: &db-volumes
 #  - ./postgres_data:/var/lib/postgresql/data:rw,z,U
 #  - postgres-vol:/var/lib/postgresql/data:rw,z,U
-  - postgres-vol:/var/lib/postgresql/data
+  - postgres_vol:/var/lib/postgresql/data
+  - ./init.sql:/docker-entrypoint-initdb.d/init.sql
 
 version: '3.7'
 
@@ -31,34 +32,46 @@ services:
     container_name: eclipse-temurin-17-jre-focal
     image: docker.io/eclipse-temurin:17-jre-focal
     ports:
-      - 8080:80
+      - 8080:8080
+    expose:
+      - "8080"
+    #    network_mode: host
     volumes: *jre-volumes
     tty: true
     command: "/bin/bash"
     working_dir: /tmp
+    depends_on:
+      db:
+        condition: service_healthy
+#    entrypoint: java -Dspring.profiles.active=development ${JAVA_OPTS} -Xmx${javaMemoryLimit} -jar /app.jar
+    entrypoint: java -Dspring.profiles.active=development -jar pogues-bo.jar
 
   db:
     image: postgres:16.1
-#    image: bitnami/postgresql:16.1.0-debian-11-r19
     container_name: postgres-dev-with-volumes
     hostname: postgres-dev
     privileged: true
     environment:
-      - POSTGRES_USER=dev
-      - POSTGRES_DB=db
+      - POSTGRES_USER=pogues
+      - POSTGRES_DB=pogues
       - POSTGRES_PASSWORD_FILE=/run/secrets/postgres-password
     secrets:
       - postgres-password
+    volumes: *db-volumes
+#    volumes:
+#      - postgres_vol:/var/lib/postgresql/data
+#      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    expose:
+    - "5432"
+    ports:
+      - 5432:5432
+#    network_mode: host
     healthcheck:
       test: ["CMD-SHELL", "sh -c 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}'"]
       interval: 10s
-      timeout: 3s
+      timeout: 30s
       retries: 3
-    volumes: *db-volumes
-    expose:
-      - "5432"
-    ports:
-      - 5432:5432
 
 volumes:
-  postgres-vol:
+  postgres_vol:
+#  test_vol:
