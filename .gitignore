@@ -17,3 +17,5 @@ WebContent/*.js
 /bin/
 #feature/conteneurisation
 .m2
+secrets/postgres_password.txt
+src/main/resources/env/dev/pogues-bo.properties

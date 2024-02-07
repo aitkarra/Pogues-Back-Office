@@ -1,3 +1,30 @@
+#----------------------------------------------------------------------------
+#  (\___/) (\_(\
+#  (='.'=) (=':') Conteneurisation de POGUES Backend
+#  (")_(") (,(")(")
+#
+# Commandes :
+# PODMAN INSEE
+# - podman --log-level=debug compose -f docker-compose-dev-with-volumes.yml --env-file .env-container-intranet-insee --project-name pogues-backend up
+# - podman --log-level=debug compose -f docker-compose-dev-with-volumes.yml --env-file .env-container-intranet-insee --project-name pogues-backend up -d
+# - podman --log-level=debug compose -f docker-compose-dev-with-volumes.yml --env-file .env-container-intranet-insee --project-name pogues-backend down
+# - podman --log-level=debug compose -f docker-compose-dev-with-volumes.yml --env-file .env-container-intranet-insee --project-name pogues-backend down -v
+# DOCKER HORS INSEE
+# - docker --log-level=debug compose -f docker-compose-dev-with-volumes.yml --env-file .env-container --project-name pogues-backend up
+# - docker --log-level=debug compose -f docker-compose-dev-with-volumes.yml --env-file .env-container --project-name pogues-backend up -d
+# - docker --log-level=debug compose -f docker-compose-dev-with-volumes.yml --env-file .env-container --project-name pogues-backend down
+# - docker --log-level=debug compose -f docker-compose-dev-with-volumes.yml --env-file .env-container --project-name pogues-backend down -v
+# Gestion du cache
+# https://github.com/containers/podman-compose/issues/205
+# - podman rmi --all
+# Liens
+# - http://localhost:8080/swagger-ui/index.html
+# podman generate kube
+# podman ps
+# podman generate kube eclipsetemurin17jrefocal  > eclipsetemurin17jrefocal.yml
+# podman
+#----------------------------------------------------------------------------
+
 x-maven-openjdk-volumes: &maven-openjdk-volumes
   - ./.m2:/root/.m2
   - ./:/tmp
@@ -10,8 +37,6 @@ secrets:
     file: ./secrets/postgres_password.txt
 
 x-db-volumes: &db-volumes
-#  - ./postgres_data:/var/lib/postgresql/data:rw,z,U
-#  - postgres-vol:/var/lib/postgresql/data:rw,z,U
   - postgres_vol:/var/lib/postgresql/data
   - ./init.sql:/docker-entrypoint-initdb.d/init.sql
 
@@ -19,59 +44,88 @@ version: '3.7'
 
 services:
   build:
-    container_name: maven-3-8-4-openjdk-17
-    image: docker.io/maven:3.8.4-openjdk-17
-    #    image: harbor.cluster.pve.perso.relativite.ovh/store/maven:3.8.4-openjdk-11
-    #    image: cache-ili.univ-artois.fr/proxy_cache/library/maven:3.8.4-openjdk-11
+    container_name: mavenopenjdk17
+    image: ${IMAGE_BUILD_MAVEN}
+    restart: always
     volumes: *maven-openjdk-volumes
     tty: true
     command: "/bin/bash"
     working_dir: /tmp
+    networks:
+      - backend-pogues
 
   run:
-    container_name: eclipse-temurin-17-jre-focal
-    image: docker.io/eclipse-temurin:17-jre-focal
+    container_name: eclipsetemurin17jrefocal
+    image: ${IMAGE_RUN_JAVA}
+    restart: always
     ports:
       - 8080:8080
     expose:
       - "8080"
-    #    network_mode: host
     volumes: *jre-volumes
-    tty: true
-    command: "/bin/bash"
     working_dir: /tmp
     depends_on:
       db:
         condition: service_healthy
-#    entrypoint: java -Dspring.profiles.active=development ${JAVA_OPTS} -Xmx${javaMemoryLimit} -jar /app.jar
-    entrypoint: java -Dspring.profiles.active=development -jar pogues-bo.jar
+    healthcheck:
+      test: ["CMD-SHELL", "curl http://localhost:8080/swagger-ui/index.html"]
+      interval: 10s
+      timeout: 900s
+      retries: 90
+#    deploy:
+#      resources:
+#        limits:
+#          cpus: '1'
+#          memory: 100M
+#        reservations:
+#          cpus: '0.5'
+#          memory: 50M
+#    entrypoint: java -Dspring.profiles.active=dev ${JAVA_OPTS} -Xmx${javaMemoryLimit} -jar /app.jar
+    entrypoint: java -Dspring.profiles.active=dev -jar pogues-bo.jar
+    networks:
+      - backend-pogues
+
+  nginx-cors:
+#    build: dockerfiles/nginx
+    container_name: nginxcors
+    image: ${IMAGE_NGINX_CORS}
+    restart: always
+    ports:
+      - "8888:80"
+    depends_on:
+      run:
+        condition: service_healthy
+    networks:
+      - backend-pogues
 
   db:
-    image: postgres:16.1
-    container_name: postgres-dev-with-volumes
+    container_name: postgresdevwithvolumes
+    image: ${IMAGE_BDD}
     hostname: postgres-dev
+    restart: always
     privileged: true
     environment:
-      - POSTGRES_USER=pogues
-      - POSTGRES_DB=pogues
-      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres-password
+      POSTGRES_USER: pogues
+      POSTGRES_DB: pogues
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
     secrets:
       - postgres-password
     volumes: *db-volumes
-#    volumes:
-#      - postgres_vol:/var/lib/postgresql/data
-#      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     expose:
     - "5432"
     ports:
       - 5432:5432
-#    network_mode: host
     healthcheck:
       test: ["CMD-SHELL", "sh -c 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}'"]
       interval: 10s
       timeout: 30s
       retries: 3
+    networks:
+      - backend-pogues
 
 volumes:
   postgres_vol:
-#  test_vol:
+
+networks:
+  backend-pogues:
+    name: backend-pogues
